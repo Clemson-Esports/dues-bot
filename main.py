@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import stripe
 import discord
+from discord import app_commands
 
 
 @dataclass
@@ -14,6 +15,7 @@ class Configuration:
     days_until_due: int
     refresh_every_seconds: float
     dues_cents: int
+    guild_id: str
     stripe_api_key: str
     discord_api_key: str
 
@@ -40,7 +42,7 @@ def get_product_name() -> str:
     return f"Clemson Esports Dues {datetime.now().year}-{datetime.now().year + 1:.0f}"
 
 
-def request_dues(name: str, email: str) -> DuesRequest:
+async def request_dues(name: str, email: str, callback: callable = print) -> DuesRequest:
 
     product = stripe.Product.create(name=get_product_name())
     price = stripe.Price.create(
@@ -63,7 +65,7 @@ def request_dues(name: str, email: str) -> DuesRequest:
         invoice=invoice.id,
     )
     sent_invoice = stripe.Invoice.send_invoice(invoice.id)
-    print(sent_invoice.hosted_invoice_url)
+    await callback(sent_invoice.hosted_invoice_url)
     before = datetime.now()
     while True and (datetime.now() - before).days < CONFIG.days_until_due:
         time.sleep(CONFIG.refresh_every_seconds)
@@ -80,8 +82,38 @@ def request_dues(name: str, email: str) -> DuesRequest:
 
 def main():
 
-    status = request_dues(name="Jacob Jeffries", email="jeffriesjacob0@gmail.com")
-    print(status)
+    intents = discord.Intents.all()
+    intents.message_content = True
+
+    bot = discord.Client(command_prefix="!", intents=intents)
+    tree = app_commands.CommandTree(bot)
+    guild = discord.Object(id=CONFIG.guild_id)
+
+    @tree.command(name="pay_dues", description="Pay dues", guild=guild)
+    async def pay_dues(interaction: discord.Interaction, email: str):
+
+        await interaction.response.send_message(f"Generating invoice link for {interaction.user}...")
+        message = await interaction.original_response()
+        request = await request_dues(
+            name=interaction.user,
+            email=email,
+            callback=lambda msg: message.edit(content=msg)
+        )
+        if request == DuesRequest.PAID:
+            await message.edit(content="Invoice paid! Assigning the role...")
+            role = interaction.guild.get_role(866872851306512405)
+            await interaction.user.add_roles(role)
+            await message.edit(content="Role assigned!")
+        elif request == DuesRequest.NOT_PAID:
+            await message.edit(
+                content="Invoice not paid. Please try again or open up a ticket with <@575252669443211264>"
+            )
+
+    @bot.event
+    async def on_ready():
+        await tree.sync(guild=guild)
+
+    bot.run(CONFIG.discord_api_key)
 
 
 if __name__ == "__main__":
