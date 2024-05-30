@@ -15,7 +15,8 @@ class Configuration:
     days_until_due: int
     refresh_every_seconds: float
     dues_cents: int
-    guild_id: str
+    guild_id: int
+    paid_member_role_id: int
     stripe_api_key: str
     discord_api_key: str
 
@@ -92,6 +93,11 @@ def main():
     @tree.command(name="pay_dues", description="Pay dues", guild=guild)
     async def pay_dues(interaction: discord.Interaction, email: str):
 
+        paid_member_role = interaction.guild.get_role(CONFIG.paid_member_role_id)
+        if paid_member_role in interaction.user.roles:
+            await interaction.response.send_message(f"You already paid dues!")
+            return
+
         await interaction.response.send_message(f"Generating invoice link for {interaction.user}...")
         message = await interaction.original_response()
         request = await request_dues(
@@ -101,8 +107,7 @@ def main():
         )
         if request == DuesRequest.PAID:
             await message.edit(content="Invoice paid! Assigning the role...")
-            role = interaction.guild.get_role(866872851306512405)
-            await interaction.user.add_roles(role)
+            await interaction.user.add_roles(paid_member_role)
             await message.edit(content="Role assigned!")
         elif request == DuesRequest.NOT_PAID:
             await message.edit(
