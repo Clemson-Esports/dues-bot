@@ -1,0 +1,7 @@
+{
+  "days_until_due": 1,
+  "refresh_every_seconds": 10.0,
+  "dues_cents": 2000,
+  "stripe_api_key": "******************",
+  "discord_api_key": "******************"
+}
