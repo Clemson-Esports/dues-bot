@@ -4,6 +4,7 @@
   "dues_cents": 2000,
   "guild_id": 215845807801237514,
   "paid_member_role_id": 866872851306512405,
+  "channel_deletion_time_sec": 10.0,
   "stripe_api_key": "******************",
   "discord_api_key": "******************"
 }

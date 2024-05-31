@@ -17,6 +17,7 @@ class Configuration:
     dues_cents: int
     guild_id: int
     paid_member_role_id: int
+    channel_deletion_time_sec: float
     stripe_api_key: str
     discord_api_key: str
 
@@ -43,7 +44,7 @@ def get_product_name() -> str:
     return f"Clemson Esports Dues {datetime.now().year}-{datetime.now().year + 1:.0f}"
 
 
-async def request_dues(name: str, email: str, callback: callable = print) -> DuesRequest:
+async def request_dues(name: str, email: str, callback: callable) -> DuesRequest:
 
     product = stripe.Product.create(name=get_product_name())
     price = stripe.Price.create(
@@ -95,24 +96,43 @@ def main():
 
         paid_member_role = interaction.guild.get_role(CONFIG.paid_member_role_id)
         if paid_member_role in interaction.user.roles:
-            await interaction.response.send_message(f"You already paid dues!")
+            await interaction.response.send_message("You already paid dues!")
             return
 
-        await interaction.response.send_message(f"Generating invoice link for {interaction.user}...")
+        await interaction.response.send_message(f"Generating invoice channel for {interaction.user}...")
         message = await interaction.original_response()
+
+        category = discord.utils.get(interaction.guild.categories, name="Invoices")
+        channel = await interaction.guild.create_text_channel(
+            interaction.user.name,
+            category=category,
+            overwrites={
+                interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.guild.me: discord.PermissionOverwrite(read_messages=True),
+                interaction.user: discord.PermissionOverwrite(read_messages=True)
+            }
+        )
+
+        await message.edit(content="Channel created, check for pings")
+        await channel.send(content=f"Generating invoice link for <@{interaction.user.id}>...")
+        await channel.send(content="Remember to download your receipt in case something goes wrong!")
         request = await request_dues(
             name=interaction.user,
             email=email,
-            callback=lambda msg: message.edit(content=msg)
+            callback=lambda msg: channel.send(content=f"Pay the invoice at {msg}")
         )
         if request == DuesRequest.PAID:
-            await message.edit(content="Invoice paid! Assigning the role...")
+            await channel.send(content="Invoice paid! Assigning the role...")
             await interaction.user.add_roles(paid_member_role)
-            await message.edit(content="Role assigned!")
+            await channel.send(content="Role assigned!")
         elif request == DuesRequest.NOT_PAID:
-            await message.edit(
+            await channel.send(
                 content="Invoice not paid. Please try again or open up a ticket with <@575252669443211264>"
             )
+
+        await channel.send(content=f"Deleting the invoice channel in {CONFIG.channel_deletion_time_sec:.0f} seconds...")
+        time.sleep(CONFIG.channel_deletion_time_sec)
+        await channel.delete(reason="Invoice request completed")
 
     @bot.event
     async def on_ready():
